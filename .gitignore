@@ -1,0 +1,21 @@
+# Python bytecode and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+build/
+dist/
+*.egg-info/
+
+# Streamlit local config and cache
+.streamlit/
+
+# Local operating system files
+.DS_Store
+Thumbs.db
+
+# Diagnostic and scratch test scripts (kept local)
+test_gradcam_debug.py
+test_gradcam_fix.py
+test_all_models.py
