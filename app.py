@@ -180,8 +180,14 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 📁 Load Sample Scans")
-    sample_files = glob.glob("sample_data/*.png")
-    selected_sample = None
+    sample_files = sorted(
+        glob.glob("sample_data/*.png") + 
+        glob.glob("sample_data/*.jpg") + 
+        glob.glob("sample_data/*.jpeg") +
+        glob.glob("sample_data/*.PNG") + 
+        glob.glob("sample_data/*.JPG") + 
+        glob.glob("sample_data/*.JPEG")
+    )
     if sample_files:
         sample_names = {os.path.basename(f): f for f in sample_files}
         picked = st.selectbox("Choose a sample MRI:", ["-- None --"] + list(sample_names.keys()))
