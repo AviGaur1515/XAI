@@ -180,6 +180,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 📁 Load Sample Scans")
+    selected_sample = None
     sample_files = sorted(
         glob.glob("sample_data/*.png") + 
         glob.glob("sample_data/*.jpg") + 
