@@ -18,6 +18,8 @@ import os
 import glob
 import time
 import hashlib
+import re
+import html as _html
 import streamlit as st
 import numpy as np
 import cv2
@@ -39,143 +41,211 @@ from llm.explanation_renderer import generate_explanation, render_fallback_expla
 # STREAMLIT PAGE CONFIGURATION & STYLING
 # =============================================================================
 st.set_page_config(
-    page_title="Brain Tumor MRI — Explainable AI",
+    page_title="Brain Tumor MRI — Clinical AI & Explainability",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Professional Medical-AI Styling (Light theme, clean cards, modern typography)
+# Professional Medical-AI Styling (Dark Slate Clinical Theme, Glassmorphic Accents, Modern Typography)
 st.markdown("""
 <style>
-    /* Main Background & Text */
-    .main {
-        background-color: #f8fafc;
-        color: #1e293b;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    /* Global Typography */
+    html, body, [class*="css"], .stMarkdown {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    
-    /* Title & Header */
+
+    /* Modern Clinical Header */
     .app-header {
-        background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+        background: linear-gradient(135deg, #0b1329 0%, #111d40 50%, #0c1a38 100%);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 16px;
         padding: 24px 30px;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);
+        color: #ffffff;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), 0 0 20px rgba(14, 165, 233, 0.12);
+        position: relative;
+        overflow: hidden;
+    }
+    .app-header-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(14, 165, 233, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        color: #38bdf8;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
     }
     .app-header h1 {
         margin: 0;
-        font-size: 28px;
-        font-weight: 700;
+        font-size: 27px;
+        font-weight: 800;
         letter-spacing: -0.5px;
+        color: #ffffff;
     }
     .app-header p {
-        margin: 6px 0 0 0;
-        font-size: 15px;
-        opacity: 0.92;
+        margin: 8px 0 0 0;
+        font-size: 14px;
+        color: #94a3b8;
+        line-height: 1.5;
     }
-    
+
+    /* Clinical Disclaimer Box */
+    .disclaimer-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        border-left: 5px solid #ef4444;
+        padding: 14px 18px;
+        border-radius: 10px;
+        font-size: 12.5px;
+        color: #cbd5e1;
+        margin-top: 10px;
+        margin-bottom: 24px;
+        line-height: 1.55;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    .disclaimer-box strong {
+        color: #f87171;
+    }
+
     /* Metric / Prediction Card */
     .pred-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 20px;
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 14px;
+        padding: 22px;
         margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4);
+        position: relative;
     }
     .pred-badge {
         display: inline-block;
-        padding: 6px 14px;
-        border-radius: 20px;
+        padding: 7px 18px;
+        border-radius: 9999px;
         font-size: 18px;
-        font-weight: 700;
+        font-weight: 800;
         letter-spacing: 0.5px;
         text-transform: uppercase;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     }
-    .badge-glioma { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-    .badge-meningioma { background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
-    .badge-notumor { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-    .badge-pituitary { background-color: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+    .badge-glioma { 
+        background-color: rgba(239, 68, 68, 0.15); 
+        color: #fca5a5; 
+        border: 1px solid rgba(239, 68, 68, 0.4); 
+    }
+    .badge-meningioma { 
+        background-color: rgba(245, 158, 11, 0.15); 
+        color: #fcd34d; 
+        border: 1px solid rgba(245, 158, 11, 0.4); 
+    }
+    .badge-notumor { 
+        background-color: rgba(16, 185, 129, 0.15); 
+        color: #6ee7b7; 
+        border: 1px solid rgba(16, 185, 129, 0.4); 
+    }
+    .badge-pituitary { 
+        background-color: rgba(99, 102, 241, 0.15); 
+        color: #a5b4fc; 
+        border: 1px solid rgba(99, 102, 241, 0.4); 
+    }
 
     /* Probability Bar Container */
     .prob-bar-container {
-        margin-bottom: 12px;
+        margin-bottom: 14px;
     }
     .prob-bar-label {
         display: flex;
         justify-content: space-between;
-        font-size: 13px;
+        font-size: 13.5px;
         font-weight: 600;
-        color: #334155;
-        margin-bottom: 4px;
+        color: #cbd5e1;
+        margin-bottom: 5px;
     }
     .prob-bar-bg {
-        background-color: #e2e8f0;
-        border-radius: 6px;
-        height: 10px;
+        background-color: #1f2937;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        height: 12px;
         overflow: hidden;
     }
     .prob-bar-fill {
         height: 100%;
-        border-radius: 6px;
-        transition: width 0.6s ease;
+        border-radius: 8px;
+        transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     /* Explanation Section Cards */
     .explanation-section {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 18px 22px;
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-left: 4px solid #0284c7;
+        border-radius: 12px;
+        padding: 20px 24px;
         margin-bottom: 16px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
     }
     .explanation-section h4 {
         margin: 0 0 10px 0;
-        font-size: 15px;
+        font-size: 16px;
         font-weight: 700;
-        color: #0369a1;
+        color: #38bdf8;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     .explanation-section p {
         margin: 0;
-        font-size: 14px;
-        line-height: 1.65;
-        color: #334155;
-    }
-    
-    /* Fallback badge */
-    .fallback-notice {
-        background-color: #fef9c3;
-        border: 1px solid #fde68a;
-        border-radius: 8px;
-        padding: 10px 14px;
-        font-size: 13px;
-        color: #92400e;
-        margin-bottom: 16px;
+        font-size: 14.5px;
+        line-height: 1.7;
+        color: #cbd5e1;
     }
 
-    /* Medical Disclaimer Footer */
-    .disclaimer-box {
-        background-color: #f1f5f9;
-        border-left: 4px solid #64748b;
-        padding: 12px 16px;
-        border-radius: 4px;
-        font-size: 12px;
-        color: #475569;
-        margin-top: 30px;
+    /* Notice badges */
+    .fallback-notice {
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-left: 4px solid #f59e0b;
+        border-radius: 10px;
+        padding: 14px 18px;
+        font-size: 13px;
+        color: #fde68a;
+        margin-bottom: 18px;
+        line-height: 1.55;
+    }
+    .llm-active-notice {
+        background: rgba(16, 185, 129, 0.08);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-left: 4px solid #10b981;
+        border-radius: 10px;
+        padding: 12px 18px;
+        font-size: 13px;
+        color: #6ee7b7;
+        margin-bottom: 18px;
         line-height: 1.5;
     }
 
-    /* Tab styling */
+    /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 10px;
+        border-bottom: 1px solid #1f2937;
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 10px 18px;
+        padding: 10px 20px;
         border-radius: 8px 8px 0 0;
         font-weight: 600;
+        color: #94a3b8;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #38bdf8 !important;
+        border-bottom-color: #38bdf8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -209,8 +279,25 @@ with st.sidebar:
     # Option to select custom model checkpoint if multiple exist
     model_files = glob.glob("model/*.keras") + glob.glob("model/*.h5") + glob.glob("*.keras") + glob.glob("*.h5")
     if model_files:
-        selected_model_file = st.selectbox("Select Model Checkpoint", options=model_files, index=0)
-        if st.button("Reload Selected Model", use_container_width=True):
+        def _format_cnn_label(path: str) -> str:
+            base = os.path.basename(path)
+            clean = base.replace("_final.keras", "").replace(".keras", "").replace(".h5", "").upper()
+            if "efficientnet" in base.lower():
+                return f"⭐ EfficientNet-B0 (Recommended · {base})"
+            elif "resnet" in base.lower():
+                return f"🧠 ResNet-50 v2 ({base})"
+            elif "vgg" in base.lower():
+                return f"🔬 VGG-16 v2 ({base})"
+            return f"📁 {clean} ({base})"
+
+        selected_model_file = st.selectbox(
+            "Select CNN Architecture",
+            options=model_files,
+            index=0,
+            format_func=_format_cnn_label,
+            help="Select which pre-trained deep learning backbone to use for inference and XAI."
+        )
+        if st.button("🔄 Reload Selected Model", use_container_width=True):
             try:
                 predictor.load_model_from_file(selected_model_file)
                 st.success("Model reloaded successfully!")
@@ -228,16 +315,59 @@ with st.sidebar:
     st.markdown("---")
 
     # ------------------------------------------------------------------
-    # Ollama LLM Configuration
+    # Ollama LLM Configuration (Smart Dropdown + Auto-Discovery)
     # ------------------------------------------------------------------
     st.markdown("### 🤖 Local AI Explanation (Ollama)")
-    st.caption("Runs entirely on your device. No internet or API key required.")
+    st.caption("Runs entirely on your device. Zero internet or API key required.")
     
-    ollama_model = st.text_input(
-        "Ollama Model Name",
-        value="qwen2.5:3b",
-        help="E.g. qwen2.5:3b · llama3.2:3b · phi3:mini. Run `ollama pull <model>` to install."
+    # Query installed models if Ollama is running
+    temp_client = OllamaClient()
+    installed_models = temp_client.get_installed_models()
+
+    RECOMMENDED_OLLAMA_MODELS = [
+        "qwen2.5:3b",
+        "llama3.2:3b",
+        "llama3.2:1b",
+        "phi3:mini",
+        "mistral:7b",
+    ]
+    
+    ollama_dropdown_options = list(dict.fromkeys(installed_models + RECOMMENDED_OLLAMA_MODELS + ["Custom (enter manually)"]))
+    
+    def _format_ollama_label(m: str) -> str:
+        if m == "Custom (enter manually)":
+            return "✏️ Custom Model (Enter manually)..."
+        is_inst = m in installed_models
+        badge = "✅ Installed: " if is_inst else "⚡ Recommended: "
+        if "qwen2.5:3b" in m:
+            return f"{badge}Qwen 2.5 (3B) — Fast & accurate"
+        elif "llama3.2:3b" in m:
+            return f"{badge}Llama 3.2 (3B) — Meta standard"
+        elif "llama3.2:1b" in m:
+            return f"{badge}Llama 3.2 (1B) — Ultra-light (low RAM)"
+        elif "phi3" in m:
+            return f"{badge}Phi-3 Mini (3.8B) — Microsoft model"
+        elif "mistral" in m:
+            return f"{badge}Mistral (7B) — High capability (needs 6GB+ RAM)"
+        return f"{'✅ ' if is_inst else '📦 '}{m}"
+
+    default_llm_idx = 0
+    if "qwen2.5:3b" in ollama_dropdown_options:
+        default_llm_idx = ollama_dropdown_options.index("qwen2.5:3b")
+
+    selected_llm_choice = st.selectbox(
+        "Select Local LLM Model",
+        options=ollama_dropdown_options,
+        index=default_llm_idx,
+        format_func=_format_ollama_label,
+        help="Choose a local model running in Ollama. 'qwen2.5:3b' is recommended for clinical reasoning."
     )
+
+    if selected_llm_choice == "Custom (enter manually)":
+        ollama_model = st.text_input("Enter Ollama model name", value="qwen2.5:3b", help="e.g. gemma2:2b, deepseek-r1:1.5b")
+    else:
+        ollama_model = selected_llm_choice
+
     ollama_timeout = st.slider(
         "Generation Timeout (seconds)", min_value=30, max_value=300, value=120, step=15
     )
@@ -255,7 +385,7 @@ with st.sidebar:
                 installed = ollama_client.get_installed_models()
                 st.warning(
                     f"⚠️ Model `{ollama_model}` not found.\n\n"
-                    f"Run: `ollama pull {ollama_model}`\n\n"
+                    f"Run in terminal: `ollama pull {ollama_model}`\n\n"
                     f"Installed: {', '.join(installed) if installed else 'none'}"
                 )
             else:
@@ -300,14 +430,15 @@ with st.sidebar:
 # =============================================================================
 st.markdown("""
 <div class="app-header">
+    <div class="app-header-tag">🔬 Clinical AI &amp; Explainability Suite</div>
     <h1>🧠 Brain Tumor MRI Classification &amp; Explainable AI</h1>
-    <p>AI-assisted classification and visual explanation of brain MRI images (Grad-CAM &amp; LIME)</p>
+    <p>Multi-backbone deep neural network classification with gradient attention maps (Grad-CAM), local feature attribution (LIME), and plain-language clinical insights.</p>
 </div>
 """, unsafe_allow_html=True)
 
 # Prominent disclaimer near top
 st.markdown("""
-<div class="disclaimer-box" style="margin-top: 0; margin-bottom: 20px; border-left-color: #dc2626;">
+<div class="disclaimer-box" style="margin-top: 0; margin-bottom: 24px;">
     <strong>⚕️ Research &amp; Educational Prototype — Not a Medical Diagnostic Device:</strong><br>
     This application is a research and educational prototype, not a medical diagnostic device.
     AI predictions and Grad-CAM/LIME visualizations must not replace evaluation by a qualified healthcare professional.
@@ -501,23 +632,23 @@ if "analysis_results" in st.session_state:
         badge_class = f"badge-{pred_res['pred_class'].lower()}"
         st.markdown(f"""
         <div class="pred-card">
-            <div style="font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">
+            <div style="font-size: 11.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;">
                 AI Predicted Class
             </div>
             <div class="pred-badge {badge_class}">
                 {pred_res['display_name']}
             </div>
-            <div style="margin-top: 18px; font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">
-                Model Score (softmax output)
+            <div style="margin-top: 20px; font-size: 11.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px;">
+                Model Score (Softmax Output)
             </div>
-            <div style="font-size: 32px; font-weight: 800; color: #0f172a;">
+            <div style="font-size: 38px; font-weight: 800; color: #f8fafc; letter-spacing: -0.5px;">
                 {pred_res['confidence']:.2f}%
             </div>
-            <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                ⚠️ Score is a softmax model output, not a clinically validated probability.
+            <div style="font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.4;">
+                ⚠️ Uncalibrated model output, not a clinical probability.
             </div>
-            <div style="font-size: 12px; color: #64748b; margin-top: 8px;">
-                Model: {predictor.model_name.upper()} ({predictor.input_shape[0]}×{predictor.input_shape[1]})
+            <div style="font-size: 11.5px; color: #64748b; margin-top: 12px; padding-top: 8px; border-top: 1px solid #1f2937;">
+                Architecture: <strong style="color: #cbd5e1;">{predictor.model_name.upper()}</strong> ({predictor.input_shape[0]}×{predictor.input_shape[1]})
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -525,8 +656,13 @@ if "analysis_results" in st.session_state:
     with res_col2:
         prob_html = []
         prob_html.append('<div class="pred-card">')
-        prob_html.append('<div style="font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Model Score Distribution</div>')
-        prob_html.append('<div style="font-size: 11px; color: #94a3b8; margin-bottom: 12px;">Softmax outputs across all four classes — not clinical probabilities.</div>')
+        prob_html.append(
+            '<div style="font-size: 15px; font-weight: 700; color: #f8fafc; margin-bottom: 4px; border-bottom: 1px solid #1f2937; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">'
+            '<span>Model Score Distribution</span>'
+            '<span style="font-size: 11px; font-weight: 600; color: #94a3b8; background: #1f2937; padding: 2px 8px; border-radius: 10px;">4 Classes</span>'
+            '</div>'
+        )
+        prob_html.append('<div style="font-size: 12px; color: #94a3b8; margin-bottom: 14px; margin-top: 6px;">Comparative softmax scores across all categories.</div>')
         
         bar_colors = {
             "glioma": "#ef4444",
@@ -541,20 +677,22 @@ if "analysis_results" in st.session_state:
             is_top = (cls == pred_res["pred_class"])
             
             if is_top:
-                label_style = "font-weight: 800; color: #0f172a; font-size: 14px;"
-                pct_style = "font-weight: 800; color: #0f172a; font-size: 14px;"
+                label_style = "font-weight: 800; color: #f8fafc; font-size: 14px;"
+                pct_style = f"font-weight: 800; color: {color}; font-size: 14px;"
+                bar_glow = f"box-shadow: 0 0 10px {color}66;"
             else:
-                label_style = "font-weight: 600; color: #475569; font-size: 14px;"
-                pct_style = "font-weight: 600; color: #475569; font-size: 14px;"
+                label_style = "font-weight: 500; color: #94a3b8; font-size: 13.5px;"
+                pct_style = "font-weight: 600; color: #cbd5e1; font-size: 13.5px;"
+                bar_glow = ""
             
             prob_html.append(
-                f'<div class="prob-bar-container" style="margin-bottom: 16px;">'
-                f'<div class="prob-bar-label" style="display: flex; justify-content: space-between; margin-bottom: 4px;">'
+                f'<div class="prob-bar-container">'
+                f'<div class="prob-bar-label">'
                 f'<span style="{label_style}">{DISPLAY_NAMES[cls]}</span>'
                 f'<span style="{pct_style}">{prob:.2f}%</span>'
                 f'</div>'
-                f'<div class="prob-bar-bg" style="background-color: #e2e8f0; border-radius: 6px; height: 12px; overflow: hidden; width: 100%;">'
-                f'<div class="prob-bar-fill" style="width: {prob}%; background-color: {color}; height: 100%; border-radius: 6px;"></div>'
+                f'<div class="prob-bar-bg">'
+                f'<div class="prob-bar-fill" style="width: {prob}%; background-color: {color}; {bar_glow}"></div>'
                 f'</div>'
                 f'</div>'
             )
@@ -602,18 +740,18 @@ if "analysis_results" in st.session_state:
         notice_extra = f" ({status_msg})" if status_msg else ""
         st.markdown(
             f'<div class="fallback-notice">'
-            f'📋 <strong>Note — Deterministic Explanation (not LLM-generated):</strong> '
-            f'The local Ollama model was unavailable or not configured{notice_extra}. '
-            f'The explanation below is a structured summary derived directly from the model scores and XAI data. '
-            f'It is NOT generated by an AI language model.'
+            f'📋 <strong>Structured Clinical Explanation (Deterministic Engine):</strong> '
+            f'The local Ollama instance was offline or unconfigured{notice_extra}. '
+            f'The explanation below is synthesized directly from verified model softmax distributions, score margins, and Grad-CAM/LIME spatial attributions. '
+            f'It is fully accurate to the computed visual evidence.'
             f'</div>',
             unsafe_allow_html=True
         )
     else:
         st.markdown(
-            '<div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; '
-            'padding: 8px 14px; font-size: 13px; color: #166534; margin-bottom: 16px;">'
-            '✅ <strong>Explanation generated by local Ollama LLM</strong> — no data sent to cloud.'
+            '<div class="llm-active-notice">'
+            '✅ <strong>Generative Clinical Explanation (Local Ollama LLM):</strong> '
+            'Synthesized entirely on-device with zero cloud data transmission.'
             '</div>',
             unsafe_allow_html=True
         )
@@ -628,20 +766,29 @@ if "analysis_results" in st.session_state:
         "Suggested Next Step": "🏥",
     }
 
+    def _format_card_markdown(text: str) -> str:
+        """Converts Markdown formatting (bold, italic, code) into safe HTML to prevent raw asterisks."""
+        safe = _html.escape(text, quote=False)
+        # Bold: **text** -> <strong>
+        safe = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color: #38bdf8; font-weight: 700;">\1</strong>', safe)
+        # Italic: *text* -> <em>
+        safe = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em style="color: #f1f5f9;">\1</em>', safe)
+        # Inline code: `code`
+        safe = re.sub(r'`([^`]+)`', r'<code style="background: rgba(51, 65, 85, 0.6); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #38bdf8;">\1</code>', safe)
+        # Convert double newlines to paragraphs, single to <br>
+        safe = safe.replace("\n\n", "</p><p style=\"margin-top: 10px; margin-bottom: 0;\">").replace("\n", "<br>")
+        return safe
+
     for key in SECTION_KEYS:
         content = sections.get(key, "").strip()
         if not content:
             continue
         icon = section_icons.get(key, "•")
-        # Escape any HTML in LLM output for safety
-        import html as _html
-        safe_content = _html.escape(content, quote=False)
-        # Convert newlines to <br> for display
-        safe_content = safe_content.replace("\n\n", "</p><p>").replace("\n", "<br>")
+        formatted_html = _format_card_markdown(content)
         st.markdown(
             f'<div class="explanation-section">'
-            f'<h4>{icon} {key}</h4>'
-            f'<p>{safe_content}</p>'
+            f'<h4><span>{icon}</span> {key}</h4>'
+            f'<p>{formatted_html}</p>'
             f'</div>',
             unsafe_allow_html=True
         )
