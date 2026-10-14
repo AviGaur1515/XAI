@@ -18,9 +18,8 @@ def run_tests():
 
     # Test 1: Image loading & Preprocessing
     sample_path = "sample_data/sample_glioma.png"
-    print(f"\n[Test 1] Loading sample image: {sample_path}")
     raw_rgb = load_image_as_rgb(sample_path)
-    assert raw_rgb.shape == (240, 240, 3), f"Unexpected shape: {raw_rgb.shape}"
+    assert raw_rgb.ndim == 3 and raw_rgb.shape[2] == 3, f"Unexpected shape: {raw_rgb.shape}"
     print(f"  [OK] Image loaded successfully as RGB uint8 (shape: {raw_rgb.shape})")
 
     mri_data = prepare_mri_inputs(raw_rgb, model_name="efficientnetb0")

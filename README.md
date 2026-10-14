@@ -1,8 +1,8 @@
 # 🧠 Brain Tumor MRI Classification & Explainable AI (XAI) System
 
-A medical-AI application for brain tumor classification (Glioma, Meningioma, No Tumor, Pituitary) with multi-modal visual explainability using **Grad-CAM** and **LIME**. 
+A research and educational prototype for brain tumor classification (Glioma, Meningioma, No Tumor, Pituitary) with multi-modal visual explainability using **Grad-CAM** and **LIME**, plus **local LLM-generated patient-friendly explanations** via [Ollama](https://ollama.com) — **no cloud API, no paid service, no API key required**.
 
-Designed with a strict architectural decoupling between the **GUI layer** and the **core ML/XAI engine**, allowing seamless deployment on laptops and straightforward future migration to a **Raspberry Pi-based handheld diagnostic assistant**.
+> ⚕️ **This is a research prototype, not a medical diagnostic device.** AI predictions must not replace evaluation by a qualified healthcare professional.
 
 ---
 
@@ -10,60 +10,86 @@ Designed with a strict architectural decoupling between the **GUI layer** and th
 
 ```
 BrainTumor_XAI/
-├── app.py                          # Streamlit Laptop GUI (Medical-AI Theme)
+├── app.py                          # Streamlit GUI entry point
 ├── model/
-│   └── brain_tumor_model.keras     # Place your trained Kaggle model here
+│   ├── efficientnet_final.keras    # EfficientNetB0 model (~50 MB)
+│   ├── resnet50_v2_final.keras     # ResNet50 model (~265 MB)
+│   └── vgg16_v2_final.keras        # VGG16 model (~112 MB)
 ├── inference/
 │   ├── __init__.py
-│   └── predictor.py                # Standalone prediction & probability engine
+│   └── predictor.py                # BrainTumorPredictor — model loading & predict()
 ├── xai/
 │   ├── __init__.py
-│   ├── gradcam.py                  # Grad-CAM attention heatmap & overlay generator
-│   ├── lime_explainer.py           # LIME superpixel perturbation explainer
-│   └── superpixel.py               # Superpixel weight ranking bar chart
+│   ├── gradcam.py                  # Grad-CAM GradientTape implementation
+│   ├── lime_explainer.py           # LIME Quickshift superpixel explainer
+│   └── superpixel.py               # Quantitative weight ranking bar chart
+├── llm/                            # ← NEW: Local LLM integration
+│   ├── __init__.py
+│   ├── ollama_client.py            # Ollama REST API client (health-check, generate)
+│   ├── evidence_builder.py         # Structured evidence from verified outputs only
+│   └── explanation_renderer.py     # Prompt builder, parser, deterministic fallback
 ├── utils/
 │   ├── __init__.py
 │   ├── preprocessing.py            # Image loaders & model normalizers
-│   └── generate_samples.py         # Synthetic brain MRI test sample generator
-├── sample_data/                    # Sample MRI scans for instant testing
-│   ├── sample_glioma.png
-│   ├── sample_meningioma.png
-│   ├── sample_notumor.png
-│   └── sample_pituitary.png
-├── requirements.txt                # Python dependencies
-├── run_app.bat                     # 1-Click Windows launcher
-└── README.md                       # Documentation & Raspberry Pi guide
+│   └── generate_samples.py         # Synthetic sample generator
+├── tests/
+│   └── test_evidence_builder.py    # Unit tests (no model or Ollama required)
+├── sample_data/                    # Sample MRI scans
+├── requirements.txt
+├── run_app.bat                     # 1-click Windows launcher
+└── README.md
 ```
 
 ---
 
 ## 🎯 Target Classes
 
-The classifier distinguishes between 4 diagnostic categories:
-1. **Glioma** (Class index `0`)
-2. **Meningioma** (Class index `1`)
-3. **No Tumor** (Class index `2`)
-4. **Pituitary** (Class index `3`)
+| Index | Class Key | Display Name |
+|-------|-----------|--------------|
+| 0 | `glioma` | Glioma |
+| 1 | `meningioma` | Meningioma |
+| 2 | `notumor` | No Tumor |
+| 3 | `pituitary` | Pituitary |
 
 ---
 
-## 🚀 Quickstart Guide (Laptop Demonstration)
+## 🚀 Quickstart (Laptop)
 
-### 1. Install Dependencies
-Ensure you have Python 3.10 installed:
+### 1. Install Python Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Add Your Trained Model Checkpoint
-Copy your trained model (`.keras` or `.h5` format, e.g. `efficientnetb0_p3.keras` / `efficientnet_final.keras`) into the `model/` folder:
-```bash
-model/brain_tumor_model.keras
-```
-*(The system automatically discovers `.keras` / `.h5` files in `model/` or workspace root).*
+### 2. Install Ollama (for AI explanations)
 
-### 3. Launch the Application
-Run the Streamlit application:
+> Skip this if you only want CNN + Grad-CAM + LIME without the plain-language explanation.
+
+**Windows / macOS / Linux:**  
+Download and install from [https://ollama.com](https://ollama.com)
+
+**Start the Ollama server** (keep this terminal open):
+```bash
+ollama serve
+```
+
+### 3. Pull a Local Model
+
+Choose one based on your RAM:
+
+| Model | RAM Required | Speed | Command |
+|-------|-------------|-------|---------|
+| `qwen2.5:3b` *(recommended)* | ~3–4 GB | Fast | `ollama pull qwen2.5:3b` |
+| `llama3.2:3b` | ~3–4 GB | Fast | `ollama pull llama3.2:3b` |
+| `phi3:mini` | ~2 GB | Very fast | `ollama pull phi3:mini` |
+| `llama3.1:8b` | ~8 GB | Slower | `ollama pull llama3.1:8b` |
+
+**Default configured model:** `qwen2.5:3b`  
+Change it anytime in the sidebar without editing code.
+
+> 💡 **Raspberry Pi 4 (4 GB)**: Pi 4 is marginal for 3B models; LIME alone can take 30–60 s.  
+> **Raspberry Pi 5 (8 GB)**: Should handle 3B models slowly. Use the deterministic fallback for faster response.
+
+### 4. Launch the Application
 ```bash
 streamlit run app.py
 ```
@@ -74,71 +100,102 @@ Or double-click `run_app.bat` on Windows.
 ## 🔍 Explainable AI (XAI) Methods
 
 ### 1. Grad-CAM (Visual Attention)
-* Computes gradients with respect to the final convolutional feature maps (`top_conv` for EfficientNet, `conv5_block3_out` for ResNet, `block5_conv3` for VGG16).
-* Identifies visual regions that produced the strongest class activations.
-* Generates a high-contrast OpenCV `COLORMAP_JET` overlay blended at configurable opacity ($\alpha = 0.5$).
+* Uses `GradientTape` to compute gradients w.r.t. the final convolutional layer.
+* Target layers: `top_conv` (EfficientNet) · `conv5_block3_out` (ResNet) · `block5_conv3` (VGG16).
+* Colormap: `COLORMAP_JET` (blue = low attention → red = high attention).
+* **Not a tumor segmentation** — shows model attention, not anatomy.
 
 ### 2. LIME (Superpixel Perturbations)
-* Segments the MRI using the **Quickshift** algorithm (`kernel_size=4`, `max_dist=200`, `ratio=0.2`).
-* Generates local linear explanations over perturbed superpixels:
-  * **Positive Mask (Green)**: Superpixels supporting the predicted diagnosis.
-  * **Positive + Negative Mask (Green/Red)**: Contrasts supporting vs. contradicting regions.
-  * **Superpixel Weight Field**: Continuous diverging heatmap of regional feature importance.
+* Segments MRI using **Quickshift** (`kernel_size=4`, `max_dist=200`, `ratio=0.2`).
+* Sign convention: **positive weight = supports** predicted class; **negative = opposes**.
+* Green boundaries = supporting superpixels; Red boundaries = opposing superpixels.
 
 ### 3. Quantitative Superpixel Ranking
-* Visualizes the numerical contribution weight ($w$) for the top 12 most influential superpixels in a comparative horizontal bar chart.
+* Horizontal bar chart of top 12 superpixels by absolute contribution weight.
+* Diverging `RdYlGn` spatial weight map.
+
+### 4. Local LLM Explanation (NEW)
+* Uses **Ollama** at `http://localhost:11434` — **no internet, no API key**.
+* Receives only structured evidence (class name, model scores, Grad-CAM availability, LIME weights).
+* **Never receives raw image pixels or patient data.**
+* If Ollama is unavailable: a **clearly labelled deterministic fallback** is shown automatically.
+* The LLM cannot change the predicted class or make unsupported clinical claims.
 
 ---
 
-## 🍓 Future Raspberry Pi Deployment Guide
+## 🤖 Ollama Configuration
 
-The core inference and XAI components (`inference/`, `xai/`, `utils/`) are **completely independent of Streamlit**. They accept raw NumPy image arrays (e.g. directly from a Raspberry Pi camera stream).
+| Setting | Default | How to Change |
+|---------|---------|---------------|
+| Model name | `qwen2.5:3b` | Sidebar text field |
+| Generation timeout | 120 s | Sidebar slider |
+| API endpoint | `http://localhost:11434` | `llm/ollama_client.py` → `DEFAULT_OLLAMA_BASE_URL` |
+| Max output tokens | 1024 | `llm/ollama_client.py` → `MAX_TOKENS_OUT` |
+| Temperature | 0.3 | `llm/ollama_client.py` → `payload["options"]["temperature"]` |
 
-### Raspberry Pi Architecture:
+**To switch models without restarting:**
+1. Pull the new model: `ollama pull <model_name>`
+2. Type the model name in the sidebar "Ollama Model Name" field.
+3. Click "Check Ollama Status" to verify.
+
+---
+
+## 🧪 How to Test
+
+### Manual Test Checklist
+
+| Test | Expected Behaviour |
+|------|-------------------|
+| Upload `sample_data/sample_glioma.png` | Predicts Glioma; Grad-CAM + LIME render |
+| Upload `sample_data/sample_meningioma.png` | Predicts Meningioma |
+| Upload `sample_data/sample_notumor.png` | Predicts No Tumor; explanation says class not claimed as health |
+| Upload `sample_data/sample_pituitary.png` | Predicts Pituitary |
+| Stop Ollama (`Ctrl+C` in ollama serve terminal), then analyze | Prediction and XAI still work; fallback explanation shown with yellow notice |
+| Configure invalid model name (e.g. `notamodel`), keep Ollama running | "Model not found" message + fallback explanation |
+| Upload image A, analyze, then upload image B, analyze | Results for image B shown — no stale results from image A |
+| Upload a text file or corrupt file | Friendly error message, no crash |
+| Click "Check Ollama Status" | Shows green/red status for server + model |
+
+### Unit Tests (no model or Ollama required)
+```bash
+python -m pytest tests/test_evidence_builder.py -v
 ```
-           Raspberry Pi 4 / 5
-                   │
-       ┌───────────┴───────────┐
-       ▼                       ▼
-  Pi Camera v2/v3         Image File
-       │                       │
-       └───────────┬───────────┘
-                   ▼
-         inference/predictor.py
-                   │
-        ┌──────────┴──────────┐
-        ▼                     ▼
-   Classification        XAI Engine
-   (Probabilities)     (Grad-CAM / LIME)
-        │                     │
-        └──────────┬──────────┘
-                   ▼
-       Local Display / Touchscreen
-```
 
-### Raspberry Pi Camera Inference Snippet:
-```python
-import cv2
-from inference.predictor import BrainTumorPredictor
-from xai.gradcam import compute_gradcam, build_overlay
+Tests cover:
+- Evidence builder output keys and correctness for all 4 classes
+- LIME top-feature extraction and sorting
+- Score gap description (clear / moderate / narrow)
+- Fallback explanation sections and forbidden content (no invented anatomy)
+- LLM response parser (sections found / not found / case-insensitive)
+- Ollama client (mocked HTTP: health, model check, generate, timeout)
 
-# Initialize engine
-predictor = BrainTumorPredictor("model/brain_tumor_model.keras")
+---
 
-# Capture frame from Pi Camera
-cap = cv2.VideoCapture(0)
-ret, frame = cap.read()
-cap.release()
+## 🍓 Future Raspberry Pi Deployment
 
-# Run prediction directly on camera frame
-results = predictor.predict(frame)
-print(f"Predicted: {results['display_name']} ({results['confidence']}%)")
+The `inference/`, `xai/`, `llm/`, and `utils/` packages are all **independent of Streamlit** and accept NumPy arrays directly.
 
-# Compute Grad-CAM
-heatmap, _, _, _ = compute_gradcam(predictor.model, results["processed_batch"])
-overlay, _ = build_overlay(results["rgb_display"], heatmap)
-cv2.imwrite("pi_result.png", cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
-```
+### Pi-Specific Considerations
+
+| Component | Pi 4 (4 GB) | Pi 5 (8 GB) |
+|-----------|-------------|-------------|
+| EfficientNet inference | ~2–4 s | ~1–2 s |
+| LIME (250 samples) | ~30–90 s | ~15–40 s |
+| Ollama 3B model | Marginal (~10–30 s/token) | Possible (~2–8 s/token) |
+| Deterministic fallback | Instant | Instant |
+
+**Recommended Pi strategy**: Use the deterministic fallback by default; offer the LLM explanation as optional slow mode.
+
+---
+
+## 📝 Unresolved / Known Limitations
+
+1. **Grad-CAM failure**: When `success_cam=False`, a zero heatmap is shown. The UI warns the user.
+2. **LIME fallback**: When `success=False`, a grid approximation is used. The UI warns the user.
+3. **Score label**: "Model Score (softmax output)" — not a calibrated clinical probability.
+4. **Anatomical location**: Grad-CAM heatmap location is not computationally verified; the LLM is instructed not to invent anatomical names.
+5. **LLM hallucination risk**: Temperature is set to 0.3 and the system prompt forbids clinical claims, but LLM output should always be reviewed by a clinician in any real-world context.
+6. **Tests not auto-run**: Run manually with `pytest` before deployment.
 
 ---
 
